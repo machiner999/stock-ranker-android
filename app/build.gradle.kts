@@ -18,6 +18,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     compileOptions {
@@ -26,6 +27,20 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
+    }
+
+    fun String.escapedForBuildConfig(): String = replace("\\", "\\\\").replace("\"", "\\\"")
+
+    val openAiApiKey = providers.gradleProperty("openAiApiKey")
+        .orElse(providers.environmentVariable("OPENAI_API_KEY"))
+        .orElse("")
+        .get()
+    val openAiModel = providers.gradleProperty("openAiModel")
+        .orElse("gpt-5.4-mini")
+        .get()
+    defaultConfig {
+        buildConfigField("String", "OPENAI_API_KEY", "\"${openAiApiKey.escapedForBuildConfig()}\"")
+        buildConfigField("String", "OPENAI_MODEL", "\"${openAiModel.escapedForBuildConfig()}\"")
     }
 }
 

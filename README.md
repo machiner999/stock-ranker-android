@@ -1,18 +1,33 @@
 # stock-ranker-android
 
-Kotlin + Jetpack Compose Android client for the stock ranking backend.
+Kotlin + Jetpack Compose で作られた株式ランキング Android クライアントです。
 
-## Standalone Mode
+## Responses API Android 直接実行モード
 
-The app runs without a separate backend server. It fetches free end-of-day data from Stooq directly on the device and calculates the ranking locally.
+Android アプリが Stooq から無料の日足データを取得し、決定論的な指標サマリを計算したうえで、OpenAI Responses API に構造化 JSON 出力でランキング評価を依頼します。
 
-## Screens
+個人利用向け APK として、ビルド時に OpenAI API キーを埋め込んで実行します。
 
-- Ranking: latest probability-ranked candidates
-- Detail: selected ticker signal and price chart
-- History: backtest summary
-- Settings: API base URL, push registration, disclaimer
+```bash
+export OPENAI_API_KEY="your_api_key_here"
+./gradlew :app:installDebug
+```
 
-## Notifications
+または、Gradle property として直接指定できます。
 
-The current APK is a standalone ranking app. Push notification delivery is not required for local use; production push support would still need a Firebase project.
+```bash
+./gradlew :app:installDebug -PopenAiApiKey="your_api_key_here"
+```
+
+使用モデルのデフォルトは `gpt-5.4-mini` です。変更する場合は `-PopenAiModel="model_id"` を指定します。
+
+## 画面
+
+- ランキング: 最新の確率付き上昇候補
+- 詳細: 選択した銘柄のシグナルと価格チャート
+- 検証: バックテスト概要
+- 設定: Android アプリ内算出モードと免責事項
+
+## 通知
+
+ローカル利用ではプッシュ通知の配信は不要です。本番向けにプッシュ通知を有効化する場合は、別途 Firebase プロジェクトが必要です。

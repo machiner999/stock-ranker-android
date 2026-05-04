@@ -59,7 +59,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.stockranker.data.BacktestSummary
-import com.example.stockranker.data.LocalStockEngine
+import com.example.stockranker.data.OpenAiStockEngine
 import com.example.stockranker.data.PriceBar
 import com.example.stockranker.data.RankingItem
 import com.example.stockranker.data.RankingResponse
@@ -78,7 +78,7 @@ class MainActivity : ComponentActivity() {
 }
 
 class StockRankerViewModel : ViewModel() {
-    private val engine = LocalStockEngine()
+    private val engine = OpenAiStockEngine()
     var ranking by mutableStateOf<RankingResponse?>(null)
         private set
     var detail by mutableStateOf<StockDetailResponse?>(null)
@@ -97,8 +97,7 @@ class StockRankerViewModel : ViewModel() {
             error = null
             runCatching {
                 withContext(Dispatchers.IO) {
-                    if (forceRefresh) engine.clearCache()
-                    engine.latestRanking() to engine.backtestSummary()
+                    engine.latestRanking(forceRefresh) to engine.backtestSummary()
                 }
             }.onSuccess { (latestRanking, latestBacktest) ->
                 ranking = latestRanking
@@ -195,7 +194,7 @@ fun RankingScreen(ranking: RankingResponse?, loading: Boolean, onTickerClick: (S
         item {
             Text("今日の上昇候補", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text(ranking?.signalDate ?: "未更新", color = Color.Gray)
-            if (loading) Text("スマホ内でデータ取得とランキング計算を実行中...")
+            if (loading) Text("Androidアプリ内でResponses APIによるランキングを算出中...")
         }
         items(ranking?.items.orEmpty()) { item ->
             RankingCard(item, onTickerClick)
@@ -303,8 +302,8 @@ fun HistoryScreen(summary: BacktestSummary?) {
 fun SettingsScreen(loading: Boolean, onRefresh: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("設定", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Metric("実行方式", "スマホ単体")
-        Metric("データ取得", "Stooqの日足データをアプリ内で取得")
+        Metric("実行方式", "Androidアプリ内でResponses API算出")
+        Metric("データ取得", "アプリがStooqの日足データを取得")
         Button(onClick = onRefresh, enabled = !loading) {
             if (loading) {
                 CircularProgressIndicator(
