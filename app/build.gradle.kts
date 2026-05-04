@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -30,14 +32,36 @@ android {
     }
 
     fun String.escapedForBuildConfig(): String = replace("\\", "\\\\").replace("\"", "\\\"")
+    fun String.unquoted(): String = trim().removeSurrounding("\"").removeSurrounding("'")
+
+    val localProperties = Properties().also { properties ->
+        val localPropertiesFile = rootProject.file("local.properties")
+        if (localPropertiesFile.isFile) {
+            localPropertiesFile.inputStream().use(properties::load)
+        }
+    }
 
     val openAiApiKey = providers.gradleProperty("openAiApiKey")
         .orElse(providers.environmentVariable("OPENAI_API_KEY"))
+        .orElse(providers.provider {
+            localProperties.getProperty("OPENAI_API_KEY")
+                ?: localProperties.getProperty("openAiApiKey")
+                ?: ""
+        })
         .orElse("")
         .get()
+        .unquoted()
     val openAiModel = providers.gradleProperty("openAiModel")
+        .orElse(providers.environmentVariable("OPENAI_MODEL"))
+        .orElse(providers.provider {
+            localProperties.getProperty("OPENAI_MODEL")
+                ?: localProperties.getProperty("openAiModel")
+                ?: ""
+        })
         .orElse("gpt-5.4-mini")
         .get()
+        .unquoted()
+        .ifBlank { "gpt-5.4-mini" }
     defaultConfig {
         buildConfigField("String", "OPENAI_API_KEY", "\"${openAiApiKey.escapedForBuildConfig()}\"")
         buildConfigField("String", "OPENAI_MODEL", "\"${openAiModel.escapedForBuildConfig()}\"")
