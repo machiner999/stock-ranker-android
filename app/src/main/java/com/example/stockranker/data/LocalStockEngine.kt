@@ -59,6 +59,10 @@ class LocalStockEngine(
         note = "スマホ単体版では最新シグナルを端末内で生成します。過去検証は履歴保存を追加すると有効になります。"
     )
 
+    fun clearCache() {
+        cache.clear()
+    }
+
     private fun barsFor(ticker: String): List<PriceBar> = cache.getOrPut(ticker.uppercase()) {
         fetchBars(ticker.uppercase())
     }

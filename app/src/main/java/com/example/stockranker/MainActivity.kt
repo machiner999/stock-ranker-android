@@ -30,6 +30,7 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -89,12 +90,14 @@ class StockRankerViewModel : ViewModel() {
     var error by mutableStateOf<String?>(null)
         private set
 
-    fun load() {
+    fun load(forceRefresh: Boolean = false) {
+        if (loading) return
         viewModelScope.launch {
             loading = true
             error = null
             runCatching {
                 withContext(Dispatchers.IO) {
+                    if (forceRefresh) engine.clearCache()
                     engine.latestRanking() to engine.backtestSummary()
                 }
             }.onSuccess { (latestRanking, latestBacktest) ->
@@ -105,7 +108,12 @@ class StockRankerViewModel : ViewModel() {
         }
     }
 
+    fun refreshRanking() {
+        load(forceRefresh = true)
+    }
+
     fun openTicker(ticker: String) {
+        if (loading) return
         viewModelScope.launch {
             loading = true
             error = null
@@ -171,7 +179,7 @@ fun StockRankerApp(viewModel: StockRankerViewModel = viewModel()) {
                         }
                         1 -> StockDetailScreen(viewModel.detail)
                         2 -> HistoryScreen(viewModel.backtest)
-                        3 -> SettingsScreen(onRefresh = viewModel::load)
+                        3 -> SettingsScreen(loading = viewModel.loading, onRefresh = viewModel::refreshRanking)
                     }
                 }
             }
@@ -292,15 +300,22 @@ fun HistoryScreen(summary: BacktestSummary?) {
 }
 
 @Composable
-fun SettingsScreen(onRefresh: () -> Unit) {
+fun SettingsScreen(loading: Boolean, onRefresh: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("設定", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Metric("実行方式", "スマホ単体")
         Metric("データ取得", "Stooqの日足データをアプリ内で取得")
-        Button(onClick = onRefresh) {
-            Icon(Icons.Default.Notifications, contentDescription = null)
+        Button(onClick = onRefresh, enabled = !loading) {
+            if (loading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.width(18.dp).height(18.dp),
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Icon(Icons.Default.Notifications, contentDescription = null)
+            }
             Spacer(Modifier.width(8.dp))
-            Text("ランキングを再計算")
+            Text(if (loading) "再計算中..." else "ランキングを再計算")
         }
         Text("このアプリは研究・分析用の確率シグナルを表示します。投資助言や売買推奨ではありません。")
     }
