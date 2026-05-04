@@ -1,12 +1,8 @@
 package com.example.stockranker
 
-import android.Manifest
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,7 +19,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -31,7 +28,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -129,13 +125,9 @@ class StockRankerViewModel : ViewModel() {
 fun StockRankerApp(viewModel: StockRankerViewModel = viewModel()) {
     var tab by remember { mutableIntStateOf(0) }
     var showDisclaimer by remember { mutableStateOf(true) }
-    val notificationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
     LaunchedEffect(Unit) {
         viewModel.load()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
     }
 
     MaterialTheme {
@@ -153,7 +145,7 @@ fun StockRankerApp(viewModel: StockRankerViewModel = viewModel()) {
                     NavigationBar {
                         listOf(
                             TabItem("ランキング", Icons.Default.BarChart),
-                            TabItem("詳細", Icons.Default.Notifications),
+                            TabItem("詳細", Icons.Default.Info),
                             TabItem("検証", Icons.Default.History),
                             TabItem("設定", Icons.Default.Settings)
                         ).forEachIndexed { index, item ->
@@ -311,7 +303,7 @@ fun SettingsScreen(loading: Boolean, onRefresh: () -> Unit) {
                     strokeWidth = 2.dp
                 )
             } else {
-                Icon(Icons.Default.Notifications, contentDescription = null)
+                Icon(Icons.Default.Refresh, contentDescription = null)
             }
             Spacer(Modifier.width(8.dp))
             Text(if (loading) "再計算中..." else "ランキングを再計算")
