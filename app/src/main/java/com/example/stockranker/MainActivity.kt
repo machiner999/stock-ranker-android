@@ -58,15 +58,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.stockranker.data.BacktestSummary
+import com.example.stockranker.data.LocalStockEngine
 import com.example.stockranker.data.PriceBar
 import com.example.stockranker.data.RankingItem
 import com.example.stockranker.data.RankingResponse
-import com.example.stockranker.data.StockApiClient
 import com.example.stockranker.data.StockDetailResponse
-import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
@@ -79,7 +77,7 @@ class MainActivity : ComponentActivity() {
 }
 
 class StockRankerViewModel : ViewModel() {
-    private val api = StockApiClient()
+    private val engine = LocalStockEngine()
     var ranking by mutableStateOf<RankingResponse?>(null)
         private set
     var detail by mutableStateOf<StockDetailResponse?>(null)
@@ -97,7 +95,7 @@ class StockRankerViewModel : ViewModel() {
             error = null
             runCatching {
                 withContext(Dispatchers.IO) {
-                    api.latestRanking() to api.backtestSummary()
+                    engine.latestRanking() to engine.backtestSummary()
                 }
             }.onSuccess { (latestRanking, latestBacktest) ->
                 ranking = latestRanking
@@ -112,16 +110,10 @@ class StockRankerViewModel : ViewModel() {
             loading = true
             error = null
             runCatching {
-                withContext(Dispatchers.IO) { api.stockDetail(ticker) }
+                withContext(Dispatchers.IO) { engine.stockDetail(ticker) }
             }.onSuccess { detail = it }
                 .onFailure { error = it.message }
             loading = false
-        }
-    }
-
-    fun registerPushToken(token: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching { api.registerDevice(token) }
         }
     }
 }
@@ -137,9 +129,6 @@ fun StockRankerApp(viewModel: StockRankerViewModel = viewModel()) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        runCatching {
-            FirebaseMessaging.getInstance().token.await()
-        }.onSuccess { token -> viewModel.registerPushToken(token) }
     }
 
     MaterialTheme {
@@ -182,11 +171,7 @@ fun StockRankerApp(viewModel: StockRankerViewModel = viewModel()) {
                         }
                         1 -> StockDetailScreen(viewModel.detail)
                         2 -> HistoryScreen(viewModel.backtest)
-                        3 -> SettingsScreen(BuildConfig.API_BASE_URL, onRegister = {
-                            FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
-                                viewModel.registerPushToken(token)
-                            }
-                        })
+                        3 -> SettingsScreen(onRefresh = viewModel::load)
                     }
                 }
             }
@@ -202,7 +187,7 @@ fun RankingScreen(ranking: RankingResponse?, loading: Boolean, onTickerClick: (S
         item {
             Text("今日の上昇候補", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text(ranking?.signalDate ?: "未更新", color = Color.Gray)
-            if (loading) Text("読み込み中...")
+            if (loading) Text("スマホ内でデータ取得とランキング計算を実行中...")
         }
         items(ranking?.items.orEmpty()) { item ->
             RankingCard(item, onTickerClick)
@@ -307,14 +292,15 @@ fun HistoryScreen(summary: BacktestSummary?) {
 }
 
 @Composable
-fun SettingsScreen(apiBaseUrl: String, onRegister: () -> Unit) {
+fun SettingsScreen(onRefresh: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("設定", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Metric("API", apiBaseUrl)
-        Button(onClick = onRegister) {
+        Metric("実行方式", "スマホ単体")
+        Metric("データ取得", "Stooqの日足データをアプリ内で取得")
+        Button(onClick = onRefresh) {
             Icon(Icons.Default.Notifications, contentDescription = null)
             Spacer(Modifier.width(8.dp))
-            Text("通知トークンを登録")
+            Text("ランキングを再計算")
         }
         Text("このアプリは研究・分析用の確率シグナルを表示します。投資助言や売買推奨ではありません。")
     }
