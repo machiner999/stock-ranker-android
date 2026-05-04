@@ -325,8 +325,8 @@ fun Metric(label: String, value: String) {
 @Composable
 fun ErrorBanner(message: String, onRetry: () -> Unit) {
     Card(Modifier.fillMaxWidth().padding(12.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF2F0))) {
-        Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(message, modifier = Modifier.weight(1f), color = Color(0xFF8A1F11))
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(message, color = Color(0xFF8A1F11))
             TextButton(onClick = onRetry) { Text("再試行") }
         }
     }

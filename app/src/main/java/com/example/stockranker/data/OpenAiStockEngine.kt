@@ -8,7 +8,9 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.LocalDate
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
 import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
@@ -22,6 +24,7 @@ class OpenAiStockEngine(
     private val dateFormatter = DateTimeFormatter.BASIC_ISO_DATE
     private val jsonMediaType = "application/json".toMediaType()
     private val disclaimer = "この情報は研究・分析用の確率シグナルであり、投資助言や売買推奨ではありません。"
+    private val maxOpenAiAttempts = 4
 
     fun latestRanking(forceRefresh: Boolean = false): RankingResponse {
         if (forceRefresh) clearCache()
@@ -96,11 +99,21 @@ class OpenAiStockEngine(
             .header("Content-Type", "application/json")
             .post(createOpenAiRequest(summaries).toString().toRequestBody(jsonMediaType))
             .build()
-        client.newCall(request).execute().use { response ->
-            val body = response.body?.string().orEmpty()
-            if (!response.isSuccessful) error("OpenAI Responses API failed: HTTP ${response.code}")
-            return parseOpenAiRanking(body)
+        var lastError = "OpenAI Responses API failed"
+        for (attempt in 1..maxOpenAiAttempts) {
+            client.newCall(request).execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                if (response.isSuccessful) return parseOpenAiRanking(body)
+
+                lastError = openAiErrorMessage(response.code, response.headers, body)
+                val retryDelayMillis = retryDelayMillis(response.code, response.header("Retry-After"), response.headers["x-ratelimit-reset-requests"], attempt)
+                if (retryDelayMillis == null || attempt == maxOpenAiAttempts) {
+                    error(lastError)
+                }
+                Thread.sleep(retryDelayMillis)
+            }
         }
+        error(lastError)
     }
 
     private fun createOpenAiRequest(summaries: List<IndicatorSummary>): JSONObject = JSONObject()
@@ -142,6 +155,102 @@ class OpenAiStockEngine(
             )
         )
         .put("reasoning", JSONObject().put("effort", "none"))
+
+    private fun retryDelayMillis(
+        statusCode: Int,
+        retryAfter: String?,
+        resetRequests: String?,
+        attempt: Int
+    ): Long? {
+        if (statusCode != 429 && statusCode != 500 && statusCode != 503) return null
+        val serverDelay = retryAfter?.let(::parseRetryAfterMillis)
+            ?: resetRequests?.let(::parseOpenAiResetMillis)
+        val fallbackDelay = 1_000L * (1 shl (attempt - 1))
+        return (serverDelay ?: fallbackDelay).coerceIn(1_000L, 20_000L)
+    }
+
+    private fun parseRetryAfterMillis(value: String): Long? {
+        value.toLongOrNull()?.let { return it * 1_000L }
+        return try {
+            val retryAt = ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant()
+            max(0L, retryAt.toEpochMilli() - System.currentTimeMillis())
+        } catch (_: DateTimeParseException) {
+            null
+        }
+    }
+
+    private fun parseOpenAiResetMillis(value: String): Long? {
+        val pattern = Regex("""(?:(\d+)m)?(?:(\d+)s)?(?:(\d+)ms)?""")
+        val match = pattern.matchEntire(value.trim()) ?: return null
+        val minutes = match.groupValues.getOrNull(1)?.toLongOrNull() ?: 0L
+        val seconds = match.groupValues.getOrNull(2)?.toLongOrNull() ?: 0L
+        val millis = match.groupValues.getOrNull(3)?.toLongOrNull() ?: 0L
+        val total = minutes * 60_000L + seconds * 1_000L + millis
+        return total.takeIf { it > 0L }
+    }
+
+    private fun openAiErrorMessage(statusCode: Int, headers: okhttp3.Headers, body: String): String {
+        val errorObject = runCatching {
+            JSONObject(body).optJSONObject("error")
+        }.getOrNull()
+        val apiMessage = errorObject?.optString("message").orEmpty()
+        val apiType = errorObject?.optString("type").orEmpty()
+        val apiCode = errorObject?.optString("code").orEmpty()
+        val requestId = headers["x-request-id"].orEmpty()
+        val retryAfter = headers["Retry-After"].orEmpty()
+        val rateLimitDetails = listOf(
+            "x-ratelimit-limit-requests",
+            "x-ratelimit-remaining-requests",
+            "x-ratelimit-reset-requests",
+            "x-ratelimit-limit-tokens",
+            "x-ratelimit-remaining-tokens",
+            "x-ratelimit-reset-tokens"
+        ).mapNotNull { headerName ->
+            headers[headerName]?.takeIf { it.isNotBlank() }?.let { "$headerName=$it" }
+        }
+        val bodyPreview = body.take(800).ifBlank { "(empty)" }
+
+        if (statusCode == 429) {
+            val quotaHint = if (
+                apiMessage.contains("quota", ignoreCase = true) ||
+                apiMessage.contains("billing", ignoreCase = true) ||
+                apiMessage.contains("insufficient_quota", ignoreCase = true)
+            ) {
+                " APIキーの請求設定・利用上限・残高を確認してください。"
+            } else {
+                " 少し待ってから再試行してください。"
+            }
+            return buildString {
+                appendLine("OpenAI Responses API rate limit/quota error: HTTP 429.$quotaHint")
+                appendOpenAiErrorDetails(statusCode, apiMessage, apiType, apiCode, requestId, retryAfter, rateLimitDetails, bodyPreview)
+            }.trim()
+        }
+
+        return buildString {
+            appendLine("OpenAI Responses API failed: HTTP $statusCode.")
+            appendOpenAiErrorDetails(statusCode, apiMessage, apiType, apiCode, requestId, retryAfter, rateLimitDetails, bodyPreview)
+        }.trim()
+    }
+
+    private fun StringBuilder.appendOpenAiErrorDetails(
+        statusCode: Int,
+        apiMessage: String,
+        apiType: String,
+        apiCode: String,
+        requestId: String,
+        retryAfter: String,
+        rateLimitDetails: List<String>,
+        bodyPreview: String
+    ) {
+        appendLine("status=$statusCode")
+        appendLine("message=${apiMessage.ifBlank { "(none)" }}")
+        appendLine("type=${apiType.ifBlank { "(none)" }}")
+        appendLine("code=${apiCode.ifBlank { "(none)" }}")
+        appendLine("request_id=${requestId.ifBlank { "(none)" }}")
+        appendLine("retry_after=${retryAfter.ifBlank { "(none)" }}")
+        appendLine("rate_limits=${rateLimitDetails.ifEmpty { listOf("(none)") }.joinToString(", ")}")
+        append("body=$bodyPreview")
+    }
 
     private fun rankingSchema(): JSONObject = JSONObject()
         .put("type", "object")

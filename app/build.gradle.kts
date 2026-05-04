@@ -18,6 +18,21 @@ android {
         versionName = "1.0"
     }
 
+    signingConfigs {
+        create("localRelease") {
+            storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.getByName("localRelease")
+        }
+    }
+
     buildFeatures {
         compose = true
         buildConfig = true
@@ -81,4 +96,25 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
+}
+
+val releasePackageName = "stock-ranker-release.apk"
+
+tasks.register<Copy>("createReleasePackage") {
+    group = "build"
+    description = "Creates the signed local release APK with a stable file name."
+    from(layout.buildDirectory.file("outputs/apk/release/app-release.apk"))
+    into(layout.buildDirectory.dir("outputs/release-package"))
+    rename { releasePackageName }
+}
+
+afterEvaluate {
+    tasks.named("build") {
+        dependsOn("assembleRelease")
+        finalizedBy("createReleasePackage")
+    }
+
+    tasks.named("assembleRelease") {
+        finalizedBy("createReleasePackage")
+    }
 }
